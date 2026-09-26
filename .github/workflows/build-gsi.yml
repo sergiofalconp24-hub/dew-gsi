@@ -1,0 +1,156 @@
+name: build-gsi-dew
+
+# ============================================================
+#  Compila una GSI de Android 16 (QPR) para el POCO C75 / dew
+#  (MT6769, Helio G99) a partir del arbol de dispositivos Treble.
+#
+#  POR QUE SELF-HOSTED Y NO ubuntu-latest:
+#  Un build de GSI de Android 16 necesita ~32 GB de RAM. El runner hosted
+#  mas grande de GitHub es ubuntu-latest-4-cores con 16 GB, y se queda sin
+#  memoria a mitad de compilacion. Un kernel (dew-kernel) si cabe en 16 GB;
+#  el arbol completo de AOSP no.
+#
+#  Maquina minima del runner: 16 nucleos, 32 GB RAM, 250 GB SSD/NVMe, Ubuntu 22.04/24.04
+# ============================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target de lunch'
+        default: 'treble_arm64_abgN-userdebug'
+        type: string
+      jobs:
+        description: 'Jobs de make'
+        default: '12'
+        type: string
+      gapps:
+        description: 'Variante de GApps'
+        default: 'pico'
+        type: choice
+        options: [pico, nano, stock]
+      sync_only:
+        description: 'Solo repo sync (para dejar el arbol listo)'
+        default: 'no'
+        type: choice
+        options: ['no', 'si']
+  push:
+    branches: ['build-*']
+    paths:
+      - 'local_manifest.xml'
+      - 'device/**'
+
+concurrency:
+  group: gsi-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  MANIFEST_URL: https://github.com/sergiofalconp24-hub/EvoX_treble
+  MANIFEST_REF: '16.2'
+  DEVICE_TREE: https://github.com/sergiofalconp24-hub/device_phh_treble-doze
+  AOSP_DIR: /home/runner/aosp
+  CCACHE_DIR: /home/runner/.ccache
+  CACHE_VERSION: v1
+
+jobs:
+  build:
+    # Etiquetas: self-hosted + linux + x64 (las que veras al registrar el runner)
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 720
+
+    steps:
+      - name: Checkout (este repo: workflow + scripts + local_manifest)
+        uses: actions/checkout@v4
+
+      - name: Preparar el runner
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ccache curl flex git-core gnupg \
+            libelf-dev libncurses-dev libssl-dev lz4 openjdk-21-jdk \
+            python3 rsync unzip xsltproc zip zlib1g-dev zstd
+          echo "JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64" >> "$GITHUB_ENV"
+          echo 'export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64' >> "$GITHUB_ENV"
+          # ccache: sin esto, cada build tardaria 8+ h desde cero
+          mkdir -p "$CCACHE_DIR"
+          ccache -M 50G
+          ccache --zero-stats >/dev/null
+
+      - name: Cache de ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ github.ref_name }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
+            ${{ runner.os }}-ccache-
+
+      - name: Cache del arbol de AOSP
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.AOSP_DIR }}
+          key: ${{ runner.os }}-aosp-${{ env.MANIFEST_REF }}-${{ hashFiles('local_manifest.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-aosp-${{ env.MANIFEST_REF }}-
+
+      - name: repo init + local_manifest
+        run: bash ci/repo_init.sh
+
+      - name: repo sync
+        run: bash ci/repo_sync.sh
+
+      - name: GApps (openGApps)
+        if: github.event.inputs.sync_only != 'si'
+        env:
+          GAPPS_VARIANT: ${{ github.event.inputs.gapps || 'pico' }}
+        run: bash ci/setup_gapps.sh
+
+      - name: Generar los .mk de targets
+        if: github.event.inputs.sync_only != 'si'
+        run: |
+          set -e
+          cd "$AOSP_DIR/device/phh/treble"
+          chmod +x generate.sh
+          ./generate.sh
+          echo "targets generados:"; ls -1 treble_*.mk | head
+
+      - name: Compilar la imagen del sistema
+        if: github.event.inputs.sync_only != 'si'
+        env:
+          TARGET: ${{ github.event.inputs.target || 'treble_arm64_abgN-userdebug' }}
+          JOBS: ${{ github.event.inputs.jobs || '12' }}
+        run: bash ci/build_system.sh
+
+      - name: Subir artefactos
+        if: github.event.inputs.sync_only != 'si'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gsi-system-img-${{ github.run_id }}
+          path: |
+            ${{ env.AOSP_DIR }}/out/target/product/*/obj/PHONY/*.img.xz
+            ${{ env.AOSP_DIR }}/out/target/product/*/system.img
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "## Build GSI — ${{ github.run_id }}"
+            echo ""
+            echo "- Target: \`${{ github.event.inputs.target || 'treble_arm64_abgN-userdebug' }}\`"
+            echo "- Manifest: \`${{ env.MANIFEST_URL }}\` @ \`${{ env.MANIFEST_REF }}\`"
+            echo ""
+            echo "### ccache"
+            ccache -s 2>/dev/null || true
+            echo ""
+            echo "### Imagenes"
+            find "$AOSP_DIR/out/target/product" -maxdepth 3 \
+                 \( -name '*.img.xz' -o -name 'system.img' \) -exec ls -lh {} \; \
+                 2>/dev/null || echo "(ninguna)"
+          } >> "$GITHUB_STEP_SUMMARY"

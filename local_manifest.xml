@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+
+  <!-- Árbol de dispositivos generico Treble (phhusson) en su fork de Doze-off.
+       Es lo que landing en device/phh/treble dentro del arbol AOSP.
+       Hazlo con:  gh repo fork Doze-off/device_phh_treble-doze --clone=false -->
+  <project path="device/phh/treble"
+           name="sergiofalconp24-hub/device_phh_treble-doze"
+           revision="android-16.0"
+           sync-j="4" />
+
+  <!-- Tweaks de voltaje/curvas para el SoC. Opcional, pero ayuda al rendimiento
+       y a no downclockear tan rapido. -->
+  <project path="device/phh/treble-voltage"
+           name="Doze-off/voltage_a16_treble"
+           revision="16"
+           sync-j="4" />
+
+  <!-- Overlays de hardware especificos por fabricante (el submission de
+       dispositivos que hace la gente para que su telefono funcione mejor). -->
+  <project path="vendor/hardware_overlay"
+           name="Doze-off/vendor_hardware_overlay"
+           revision="pie"
+           sync-j="4" />
+
+  <!-- App Treble (me.phh.treble.app): la UI desde la que se activan los
+       props de rendimiento en el propio movil. -->
+  <project path="device/phh/treble/app_gsi"
+           name="Doze-off/treble_app-doze"
+           revision="master"
+           sync-j="4" />
+
+</manifest>
