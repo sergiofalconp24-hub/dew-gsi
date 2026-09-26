@@ -63,7 +63,7 @@ jobs:
     timeout-minutes: 720
 
     steps:
-      - name: Checkout (este repo: workflow + scripts + local_manifest)
+      - name: "Checkout de este repo (workflow + scripts + local_manifest)"
         uses: actions/checkout@v4
 
       - name: Preparar el runner

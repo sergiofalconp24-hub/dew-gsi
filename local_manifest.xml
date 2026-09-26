@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
 
-  <!-- Árbol de dispositivos generico Treble (phhusson) en su fork de Doze-off.
-       Es lo que landing en device/phh/treble dentro del arbol AOSP.
-       Hazlo con:  gh repo fork Doze-off/device_phh_treble-doze --clone=false -->
+  <!-- Arbol de dispositivos generico Treble (phhusson) en su fork de Doze-off.
+       Es lo que aterriza en device/phh/treble dentro del arbol AOSP.
+       Se creo con: gh repo fork Doze-off/device_phh_treble-doze -->
   <project path="device/phh/treble"
            name="sergiofalconp24-hub/device_phh_treble-doze"
            revision="android-16.0"
